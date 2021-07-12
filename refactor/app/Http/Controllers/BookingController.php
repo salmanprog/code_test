@@ -7,7 +7,7 @@ use DTApi\Http\Requests;
 use DTApi\Models\Distance;
 use Illuminate\Http\Request;
 use DTApi\Repository\BookingRepository;
-
+use App\Http\Middleware\LoginAuth;
 /**
  * Class BookingController
  * @package DTApi\Http\Controllers
@@ -26,6 +26,7 @@ class BookingController extends Controller
      */
     public function __construct(BookingRepository $bookingRepository)
     {
+        $this->middleware(LoginAuth::class, ['only' => ['storeBooking']]);
         $this->repository = $bookingRepository;
     }
 
@@ -63,11 +64,98 @@ class BookingController extends Controller
      * @param Request $request
      * @return mixed
      */
+    
+    public function storeBooking(Request $request)
+    {
+        $params = $request->all();
+        $param_rules['immediatetime'] = 5;
+        $param_rules['from_language_id'] = 'required|array|exists:language,id,deleted_at,NULL';
+        $param_rules['immediate'] = 'required|string|in:yes,no';
+        $param_rules['due_date'] = 'nullable|date_format:"Y-m-d"';
+        $param_rules['due_time'] = 'nullable|date_format:"Y-m-d"';
+        $param_rules['customer_phone_type'] = 'required|string|in:yes,no';
+        $param_rules['customer_physical_type'] = 'required|string|in:yes,no';
+        $param_rules['duration'] = 'required|string';
+        $param_rules['customer_phone_type'] = 'required|in:yes,no';
+        $param_rules['customer_physical_type'] = 'required|in:yes,no';
+        $param_rules['job_for']      = 'array|in:male,female,normal,certified,certified_in_law,certified_in_helth';
+
+        $this->__is_ajax = true;
+
+        $response = $this->__validateRequestParams($request->all(), $param_rules,[]);
+
+        if ($this->__is_error == true)
+            return $response;
+
+        if($params['user_type'] != env('CUSTOMER_ROLE_ID')){
+            $errors['booking'] = 'Translator can not create booking';
+            return $this->__sendError('Validation Error.', $errors);
+        }
+
+        if($params['immediate'] == 'no'){
+            if($params['due_date'] == ''){
+                $errors['due_date'] = 'Du måste fylla in alla fält';
+            }elseif($params['due_time'] == ''){
+                $errors['due_time'] = 'Du måste fylla in alla fält';
+            }
+            return $this->__sendError('Validation Error.', $errors);
+        }elseif ($params['immediate'] == 'yes') {
+            $due_carbon = Carbon::now()->addMinute($immediatetime);
+            $params['due'] = $due_carbon->format('Y-m-d H:i:s');
+            $params['immediate'] = 'yes';
+            $params['customer_phone_type'] = 'yes';
+            $params['type'] = 'immediate';
+        }else{
+            $due = $data['due_date'] . " " . $data['due_time'];
+            $params['type'] = 'regular';
+            $due_carbon = Carbon::createFromFormat('m/d/Y H:i', $due);
+            $params['due'] = $due_carbon->format('Y-m-d H:i:s');
+            if ($due_carbon->isPast()) {
+                $errors['message'] = "Can't create booking in past";
+                return $this->__sendError('Validation Error.', $errors);
+            }
+        }
+
+        if($params['job_for'][0] == 'male' || $params['job_for'][0] == 'female'){
+            $params['gender'] = $params['job_for'];
+        }elseif ($params['job_for'][0] == 'normal') {
+                $params['certified'] = $params['job_for'];
+        }elseif ($params['job_for'][0] == 'certified') {
+                $params['certified'] = 'yes';
+        }elseif ($params['job_for'][0] == 'certified_in_law') {
+                $params['certified'] = 'law';
+        }elseif ($params['job_for'][0] == 'certified_in_helth') {
+                $params['certified'] = 'health';
+        }elseif(in_array('normal', $params['job_for']) && in_array('certified', $params['job_for'])){
+                $params['certified'] = 'both';
+        }elseif(in_array('normal', $params['job_for']) && in_array('certified_in_law', $params['job_for'])){
+                $params['certified'] = 'n_law';
+        }elseif(in_array('normal', $params['job_for']) && in_array('certified_in_helth', $params['job_for'])){
+                $params['certified'] = 'n_health';
+        }
+
+        if ($consumer_type == 'rwsconsumer')
+            $params['job_type'] = 'rws';
+        else if ($consumer_type == 'ngo')
+            $params['job_type'] = 'unpaid';
+        else if ($consumer_type == 'paid')
+            $params['job_type'] = 'paid';
+        $params['b_created_at'] = date('Y-m-d H:i:s');
+
+        if (isset($due))
+            $params['will_expire_at'] = TeHelper::willExpireAt($due, $params['b_created_at']);
+            $params['by_admin'] = isset($params['by_admin']) ? $params['by_admin'] : 'no';
+
+        $response = $this->repository->create($params);
+
+        return $this->__sendResponse('Booking', $response, 200, 'Booking has been added successfully.');
+    }
+
     public function store(Request $request)
     {
         $data = $request->all();
 
-        $response = $this->repository->store($request->__authenticatedUser, $data);
+        $response = $this->repository->store($params);
 
         return response($response);
 

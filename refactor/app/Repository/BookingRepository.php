@@ -2,6 +2,7 @@
 
 namespace DTApi\Repository;
 
+
 use DTApi\Events\SessionEnded;
 use DTApi\Helpers\SendSMSHelper;
 use Event;
@@ -125,6 +126,38 @@ class BookingRepository extends BaseRepository
      * @param $data
      * @return mixed
      */
+
+    public function create($params)
+    {
+        $cuser = User::find($params['user_id']);
+        $job = jobs::create($params);
+        $response['status'] = 'success';
+        $response['id'] = $job->id;
+        $data['job_for'] = array();
+        if ($job->gender != null) {
+            if ($job->gender == 'male') {
+                $data['job_for'][] = 'Man';
+            } else if ($job->gender == 'female') {
+                $data['job_for'][] = 'Kvinna';
+            }
+        }
+        if ($job->certified != null) {
+            if ($job->certified == 'both') {
+                $data['job_for'][] = 'normal';
+                $data['job_for'][] = 'certified';
+            } else if ($job->certified == 'yes') {
+                $data['job_for'][] = 'certified';
+            } else {
+                $data['job_for'][] = $job->certified;
+            }
+        }
+
+        $data['customer_town'] = $cuser->userMeta->city;
+        $data['customer_type'] = $cuser->userMeta->customer_type;
+        return $response;
+        
+    }
+
     public function store($user, $data)
     {
 
